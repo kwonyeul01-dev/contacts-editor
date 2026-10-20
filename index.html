@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>연락처 시트 편집기</title>
 <style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1d2939;--bd:#d0d5dd;--hd:#f2f4f7;--mut:#667085;--ac:#1a73e8;--sel:#e8f0fe;--dirty:#fff4ce;--new:#e6f4ea}
-@media (prefers-color-scheme:dark){:root{--bg:#1b1d21;--fg:#e4e7ec;--bd:#3a3f47;--hd:#262a30;--mut:#98a2b3;--ac:#8ab4f8;--sel:#27364f;--dirty:#4a3f16;--new:#1f3a2a}}
+:root{color-scheme:light dark;--bg:#fff;--fg:#1d2939;--bd:#d0d5dd;--hd:#f2f4f7;--mut:#667085;--ac:#1a73e8;--sel:#e8f0fe;--dirty:#fff4ce;--new:#e6f4ea;--err:#fde8e8}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1d21;--fg:#e4e7ec;--bd:#3a3f47;--hd:#262a30;--mut:#98a2b3;--ac:#8ab4f8;--sel:#27364f;--dirty:#4a3f16;--new:#1f3a2a;--err:#4a1f1f}}
 *{box-sizing:border-box}
 body{margin:0;height:100vh;display:flex;flex-direction:column;font:13px/1.4 system-ui,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--fg)}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--bd)}
@@ -24,8 +24,11 @@ thead th{position:sticky;background:var(--hd);z-index:3;font-weight:600;text-ali
 thead tr:first-child th{top:0;cursor:pointer}thead tr:nth-child(2) th{top:28px;padding:2px 3px}
 thead input{width:100%;height:22px;padding:0 4px}
 .rn{position:sticky;left:0;z-index:2;background:var(--hd);color:var(--mut);text-align:center;padding:0;cursor:pointer}
-thead .rn{z-index:4;cursor:default}
+thead .rn{z-index:5;cursor:default}
+thead th.fz{z-index:4}
+td.fz{position:sticky;z-index:1;background:var(--bg)}
 tr.new td{background:var(--new)}
+tr.err td{background:var(--err)}
 td.dirty{background:var(--dirty)}
 td.sel{background:var(--sel)}
 td.act{outline:2px solid var(--ac);outline-offset:-2px}
@@ -67,10 +70,44 @@ td.editing{padding:0;overflow:visible}
 'use strict';
 const SCOPE='https://www.googleapis.com/auth/contacts';
 const API='https://people.googleapis.com/v1/';
-const FIELDS='names,organizations,phoneNumbers,emailAddresses,biographies';
 const RH=28;
-const COLS=[{l:'성',w:90},{l:'이름',w:110},{l:'중간 이름',w:90},{l:'회사',w:150},{l:'부서',w:110},{l:'직책',w:110},{l:'전화',w:140},{l:'이메일',w:200},{l:'메모',w:240}];
+const REL=[['spouse','배우자'],['child','자녀'],['mother','어머니'],['father','아버지'],['parent','부모'],['brother','남자 형제'],['sister','여자 형제'],['friend','친구'],['relative','친척'],['manager','관리자'],['assistant','보조'],['referredBy','참조'],['partner','파트너'],['domesticPartner','동거인']];
+const URLT=[['profile','프로필'],['blog','블로그'],['homePage','홈페이지'],['work','직장']];
+const COLS=[
+  {l:'그룹',w:220,f:'memberships'},
+  {l:'접두사',w:70,f:'names',k:'honorificPrefix'},
+  {l:'성',w:80,f:'names',k:'familyName'},
+  {l:'중간 이름',w:90,f:'names',k:'middleName'},
+  {l:'이름',w:100,f:'names',k:'givenName'},
+  {l:'접미사',w:70,f:'names',k:'honorificSuffix'},
+  {l:'성 (소리나는 대로)',w:140,f:'names',k:'phoneticFamilyName'},
+  {l:'중간 이름 (소리나는 대로)',w:170,f:'names',k:'phoneticMiddleName'},
+  {l:'이름 (소리나는 대로)',w:140,f:'names',k:'phoneticGivenName'},
+  {l:'별명',w:90,f:'nicknames',k:'value'},
+  {l:'회사',w:150,f:'organizations',k:'name'},
+  {l:'부서',w:110,f:'organizations',k:'department'},
+  {l:'직책',w:110,f:'organizations',k:'title'},
+  {l:'이메일 (집)',w:190,f:'emailAddresses',t:'home'},
+  {l:'이메일 (직장)',w:190,f:'emailAddresses',t:'work'},
+  {l:'이메일 (기타)',w:190,f:'emailAddresses',t:'other'},
+  {l:'전화 (휴대 전화)',w:140,f:'phoneNumbers',t:'mobile'},
+  {l:'전화 (집)',w:120,f:'phoneNumbers',t:'home'},
+  {l:'전화 (직장)',w:120,f:'phoneNumbers',t:'work'},
+  {l:'전화 (기타)',w:120,f:'phoneNumbers',t:'other'},
+  {l:'전화 (대표 전화)',w:140,f:'phoneNumbers',t:'main'},
+  {l:'전화 (호출기)',w:120,f:'phoneNumbers',t:'pager'},
+  {l:'생일 (연도)',w:90,f:'birthdays',k:'year'},
+  {l:'생일 (월)',w:80,f:'birthdays',k:'month'},
+  {l:'생일 (일)',w:80,f:'birthdays',k:'day'},
+  ...REL.map(([t,n])=>({l:'관련된 사람 ('+n+')',w:130,f:'relations',t})),
+  ...URLT.map(([t,n])=>({l:'웹사이트 ('+n+')',w:140,f:'urls',t})),
+  {l:'메모',w:240,f:'biographies',k:'value'}
+];
 const NC=COLS.length;
+const FIELDS_ALL=[...new Set(COLS.map(c=>c.f))];
+const FIELD_COLS={};COLS.forEach((c,i)=>{(FIELD_COLS[c.f]=FIELD_COLS[c.f]||[]).push(i);});
+const READ_FIELDS=FIELDS_ALL.join(',');
+const FZ=[2,3,4],FZL={};{let x=40;FZ.forEach(i=>{FZL[i]=x;x+=COLS[i].w;});}
 const $=id=>document.getElementById(id);
 const grid=$('grid');
 
@@ -84,14 +121,21 @@ ed.className='ed';ed.rows=1;
 function msg(t,err){const m=$('msg');m.textContent=t;m.className=err?'err':'';}
 
 /* ---------- 데이터 변환 ---------- */
-function cellsOf(p){
-  const n=(p.names||[])[0]||{},o=(p.organizations||[])[0]||{},ph=(p.phoneNumbers||[])[0]||{},
-        em=(p.emailAddresses||[])[0]||{},b=(p.biographies||[])[0]||{};
-  return [n.familyName,n.givenName,n.middleName,o.name,o.department,o.title,ph.value,em.value,b.value].map(v=>v||'');
+let groupNames={},groupByName={};
+const TV={emailAddresses:'value',phoneNumbers:'value',urls:'value',relations:'person'};
+const sameType=(x,t)=>typeof x.type==='string'&&x.type.toLowerCase()===t.toLowerCase();
+function cellOf(p,c){
+  const a=p[c.f]||[];
+  if(c.f==='memberships')return a.map(m=>{const g=m.contactGroupMembership&&m.contactGroupMembership.contactGroupResourceName;return g?(groupNames[g]||g):'';}).filter(Boolean).join(', ');
+  if(c.f==='birthdays'){const v=((a[0]||{}).date||{})[c.k];return v?String(v):'';}
+  if(TV[c.f]){const x=a.find(x=>sameType(x,c.t));return x?x[TV[c.f]]||'':'';}
+  return (a[0]||{})[c.k]||'';
 }
+const cellsOf=p=>COLS.map(c=>cellOf(p,c));
 function makeRow(p){return {id:p.resourceName,etag:p.etag,p,o:cellsOf(p),c:cellsOf(p),isNew:false,del:false};}
 function blankRow(){return {id:null,etag:null,p:{},o:Array(NC).fill(''),c:Array(NC).fill(''),isNew:true,del:false};}
 const isChanged=r=>r.c.some((v,i)=>v!==r.o[i]);
+const changedFields=r=>FIELDS_ALL.filter(f=>FIELD_COLS[f].some(i=>r.c[i]!==r.o[i]));
 
 // 첫 번째 항목만 수정하고 나머지 항목은 그대로 보존한다.
 function groupArr(src,vals,keys,extra){
@@ -107,23 +151,43 @@ function groupArr(src,vals,keys,extra){
   }
   return arr;
 }
-function buildPerson(r){
-  const g=(idx,field,keys,extra)=>idx.some(i=>r.c[i]!==r.o[i])
-    ?groupArr(r.p[field],idx.map(i=>r.c[i]),keys,extra):(r.p[field]||[]);
-  const names=g([0,1,2],'names',['familyName','givenName','middleName']);
-  if([0,1,2].some(i=>r.c[i]!==r.o[i])&&names[0]){
-    delete names[0].unstructuredName;delete names[0].displayName;delete names[0].displayNameLastFirst;
-  }
-  const p={
-    names,
-    organizations:g([3,4,5],'organizations',['name','department','title']),
-    phoneNumbers:g([6],'phoneNumbers',['value']),
-    emailAddresses:g([7],'emailAddresses',['value']),
-    biographies:g([8],'biographies',['value'],{contentType:'TEXT_PLAIN'})
-  };
-  if(r.isNew)Object.keys(p).forEach(k=>{if(!p[k].length)delete p[k];});
-  else p.etag=r.etag;
-  return p;
+// 유형(집/직장 등)이 일치하는 첫 번째 항목만 수정하고 나머지 유형·항목은 보존한다.
+function typedArr(f,src,idxs,vals){
+  const arr=(src||[]).map(x=>({...x})),vk=TV[f];
+  idxs.forEach((ci,j)=>{
+    const t=COLS[ci].t,v=vals[j],i=arr.findIndex(x=>sameType(x,t));
+    if(i>=0){if(v==='')arr.splice(i,1);else arr[i][vk]=v;}
+    else if(v!=='')arr.push({[vk]:v,type:t});
+  });
+  return arr;
+}
+function birthArr(src,vals){
+  const arr=(src||[]).map(x=>({...x}));
+  if(vals.every(v=>v==='')){if(arr.length)arr.shift();return arr;}
+  const n=v=>{if(v==='')return undefined;if(!/^\d+$/.test(v))throw new Error('생일은 숫자로 입력해야 합니다');return +v;};
+  const date={year:n(vals[0]),month:n(vals[1]),day:n(vals[2])};
+  if(!date.month||!date.day)throw new Error('생일은 월과 일이 모두 필요합니다');
+  if(date.year===undefined)delete date.year;
+  if(arr.length){arr[0].date=date;delete arr[0].text;}else arr.push({date});
+  return arr;
+}
+function memArr(src,val){
+  const keep=(src||[]).filter(m=>!m.contactGroupMembership);
+  const names=[...new Set(val.split(',').map(x=>x.trim()).filter(Boolean))];
+  return keep.concat(names.map(n=>{
+    const rn=groupByName[n]||(/^contactGroups\//.test(n)?n:null);
+    if(!rn)throw new Error('존재하지 않는 그룹입니다: '+n);
+    return {contactGroupMembership:{contactGroupResourceName:rn}};
+  }));
+}
+function buildField(r,f){
+  const idxs=FIELD_COLS[f],vals=idxs.map(i=>r.c[i]),src=r.p[f];
+  if(f==='memberships')return memArr(src,vals[0]);
+  if(f==='birthdays')return birthArr(src,vals);
+  if(TV[f])return typedArr(f,src,idxs,vals);
+  const a=groupArr(src,vals,idxs.map(i=>COLS[i].k),f==='biographies'?{contentType:'TEXT_PLAIN'}:{});
+  if(f==='names'&&a[0]){delete a[0].unstructuredName;delete a[0].displayName;delete a[0].displayNameLastFirst;}
+  return a;
 }
 
 /* ---------- Google 인증 / API ---------- */
@@ -146,10 +210,19 @@ async function api(url,method,body,retry=true){
 }
 async function loadAll(){
   msg('불러오는 중...');
-  const out=[];let pt='';
+  const out=[],gOut={},gBy={};let pt='',gt='';
   try{
     do{
-      const j=await api(API+'people/me/connections?personFields='+FIELDS+'&pageSize=1000'+(pt?'&pageToken='+encodeURIComponent(pt):''),'GET');
+      const j=await api(API+'contactGroups?pageSize=1000'+(gt?'&pageToken='+encodeURIComponent(gt):''),'GET');
+      (j.contactGroups||[]).forEach(g=>{
+        const n=g.formattedName||g.name;
+        gOut[g.resourceName]=n;gBy[n]=g.resourceName;if(g.name)gBy[g.name]=g.resourceName;
+      });
+      gt=j.nextPageToken||'';
+    }while(gt);
+    groupNames=gOut;groupByName=gBy;
+    do{
+      const j=await api(API+'people/me/connections?personFields='+READ_FIELDS+'&pageSize=1000'+(pt?'&pageToken='+encodeURIComponent(pt):''),'GET');
       (j.connections||[]).forEach(p=>out.push(makeRow(p)));
       pt=j.nextPageToken||'';
       msg(out.length+'건 불러오는 중...');
@@ -187,20 +260,43 @@ const chunks=(arr,n)=>{const o=[];for(let i=0;i<arr.length;i+=n)o.push(arr.slice
 $('save').onclick=async()=>{
   const U=[],A=[],D=[];
   rows.forEach(r=>{
+    r.err=false;
     if(r.isNew){if(!r.del&&r.c.some(v=>v))A.push(r);}
     else if(r.del)D.push(r);
     else if(isChanged(r))U.push(r);
   });
-  if(!U.length&&!A.length&&!D.length){msg('변경 사항이 없습니다.');return;}
+  if(!U.length&&!A.length&&!D.length){msg('변경 사항이 없습니다.');render();return;}
+  const errs=[],groups=new Map(),creates=[],label=r=>(r.c[2]+r.c[4]).trim()||'(이름 없음)';
+  U.forEach(r=>{
+    try{
+      const fs=changedFields(r),p={etag:r.etag};
+      fs.forEach(f=>{p[f]=buildField(r,f);});
+      const k=fs.join(',');
+      if(!groups.has(k))groups.set(k,[]);
+      groups.get(k).push({id:r.id,p});
+    }catch(e){r.err=true;errs.push(label(r)+': '+e.message);}
+  });
+  A.forEach(r=>{
+    try{
+      const p={};
+      changedFields(r).forEach(f=>{const a=buildField(r,f);if(a.length)p[f]=a;});
+      creates.push(p);
+    }catch(e){r.err=true;errs.push(label(r)+': '+e.message);}
+  });
+  if(errs.length){
+    render();msg('입력 오류 '+errs.length+'건이 있어 저장하지 않았습니다.',true);
+    alert('다음 항목을 수정한 뒤 다시 저장하십시오. (빨간색 행)\n'+errs.slice(0,10).join('\n')+(errs.length>10?'\n...외 '+(errs.length-10)+'건':''));
+    return;
+  }
   if(!confirm('수정 '+U.length+'건, 추가 '+A.length+'건, 삭제 '+D.length+'건을 Google 연락처에 저장합니다. 계속하시겠습니까?'))return;
   ['save','reload'].forEach(i=>$(i).disabled=true);
   try{
     for(const c of chunks(D,500))await api(API+'people:batchDeleteContacts','POST',{resourceNames:c.map(r=>r.id)});
-    for(const c of chunks(U,200)){
-      const contacts={};c.forEach(r=>contacts[r.id]=buildPerson(r));
-      await api(API+'people:batchUpdateContacts','POST',{contacts,updateMask:FIELDS,readMask:'names'});
+    for(const [k,items] of groups)for(const c of chunks(items,200)){
+      const contacts={};c.forEach(x=>{contacts[x.id]=x.p;});
+      await api(API+'people:batchUpdateContacts','POST',{contacts,updateMask:k,readMask:'names'});
     }
-    for(const c of chunks(A,200))await api(API+'people:batchCreateContacts','POST',{contacts:c.map(r=>({contactPerson:buildPerson(r)})),readMask:'names'});
+    for(const c of chunks(creates,200))await api(API+'people:batchCreateContacts','POST',{contacts:c.map(p=>({contactPerson:p})),readMask:'names'});
   }catch(e){
     ['save','reload'].forEach(i=>$(i).disabled=false);
     msg('저장 오류: '+e.message+' (일부는 이미 반영되었을 수 있으므로 다시 불러오기로 확인하십시오.)',true);
@@ -244,11 +340,13 @@ function buildHead(){
   const cg=document.createElement('colgroup');
   [40,...COLS.map(c=>c.w)].forEach(w=>{const c=document.createElement('col');c.style.width=w+'px';cg.appendChild(c);});
   t.appendChild(cg);
+  t.style.width=(40+COLS.reduce((a,c)=>a+c.w,0))+'px';
   const th=document.createElement('thead'),r1=document.createElement('tr'),r2=document.createElement('tr');
   const e1=document.createElement('th');e1.className='rn';r1.appendChild(e1);
   const e2=document.createElement('th');e2.className='rn';r2.appendChild(e2);
   COLS.forEach((c,i)=>{
-    const a=document.createElement('th');a.textContent=c.l;a.dataset.i=i;a.id='h'+i;
+    const a=document.createElement('th');a.textContent=c.l;a.title=c.l;a.dataset.i=i;a.id='h'+i;
+    if(FZL[i]!==undefined){a.className='fz';a.style.left=FZL[i]+'px';}
     a.onclick=()=>{
       if(sortC===i){if(sortD===1)sortD=-1;else{sortC=-1;sortD=1;}}else{sortC=i;sortD=1;}
       COLS.forEach((cc,j)=>$('h'+j).textContent=cc.l+(j===sortC?(sortD===1?' ▲':' ▼'):''));
@@ -258,6 +356,7 @@ function buildHead(){
     const b=document.createElement('th'),inp=document.createElement('input');
     inp.placeholder='필터';
     inp.oninput=()=>{filt[i]=inp.value;applyView();};
+    if(FZL[i]!==undefined){b.className='fz';b.style.left=FZL[i]+'px';}
     b.appendChild(inp);r2.appendChild(b);
     const o=document.createElement('option');o.value=i;o.textContent=c.l;$('fcol').appendChild(o);
   });
@@ -278,12 +377,13 @@ function render(){
   let edTd=null;
   for(let i=s;i<e;i++){
     const r=rows[view[i]],tr=document.createElement('tr');
-    tr.className=(r.del?'del ':'')+(r.isNew?'new':'');
+    tr.className=(r.del?'del ':'')+(r.isNew?'new ':'')+(r.err?'err':'');
     const h=document.createElement('td');
     h.className='rn';h.textContent=i+1;h.dataset.r=i;h.dataset.h='1';tr.appendChild(h);
     for(let c=0;c<NC;c++){
       const td=document.createElement('td');td.dataset.r=i;td.dataset.c=c;
       let cl='';
+      if(FZL[c]!==undefined){cl+='fz ';td.style.left=FZL[c]+'px';}
       if(i>=rg.r0&&i<=rg.r1&&c>=rg.c0&&c<=rg.c1)cl+='sel ';
       if(i===focus.r&&c===focus.c)cl+='act ';
       if(r.c[c]!==r.o[c])cl+='dirty ';
@@ -302,7 +402,7 @@ function render(){
 function updateStatus(){
   const s=stats();
   $('foot').textContent='연락처 '+rows.filter(r=>!r.isNew).length+'건 · 표시 '+view.length+'행 · 변경: 수정 '+s.u+', 추가 '+s.a+', 삭제 '+s.d
-    +' · 전화/이메일은 첫 번째 항목만 표시되며 나머지 항목은 저장 시 그대로 유지됩니다.';
+    +' · 같은 유형이 여러 개이면 첫 번째 항목만 표시되며, 나머지와 표에 없는 유형은 저장 시 그대로 유지됩니다.';
 }
 grid.addEventListener('scroll',()=>{if(!tick){tick=true;requestAnimationFrame(()=>{tick=false;render();});}});
 
