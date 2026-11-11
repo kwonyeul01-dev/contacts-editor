@@ -41,7 +41,6 @@ td.editing{padding:0;overflow:visible}
 <body>
 <div class="bar">
   <b>연락처 시트 편집기</b>
-  <input id="cid" size="44" placeholder="Google OAuth 클라이언트 ID" autocomplete="off">
   <button id="connect">Google 연락처 연결</button>
   <button id="reload" disabled>다시 불러오기</button>
   <button id="save" class="primary" disabled>저장하기</button>
@@ -68,6 +67,7 @@ td.editing{padding:0;overflow:visible}
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 'use strict';
+const CLIENT_ID='436417576963-55e0rqcaoh0giiqcjvo5s06bqum6700v.apps.googleusercontent.com';
 const SCOPE='https://www.googleapis.com/auth/contacts';
 const API='https://people.googleapis.com/v1/';
 const RH=28;
@@ -236,11 +236,8 @@ async function loadAll(){
   msg('연락처 '+rows.length+'건을 불러왔습니다.');
 }
 $('connect').onclick=async()=>{
-  const id=$('cid').value.trim();
-  if(!id){msg('클라이언트 ID를 입력하십시오.',true);return;}
-  try{localStorage.setItem('cid',id);}catch(e){}
   if(!(window.google&&google.accounts&&google.accounts.oauth2)){msg('Google 로그인 스크립트를 불러오지 못했습니다.',true);return;}
-  tokenClient=google.accounts.oauth2.initTokenClient({client_id:id,scope:SCOPE,callback:r=>pend&&pend.cb(r),error_callback:e=>pend&&pend.err(e)});
+  tokenClient=google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPE,callback:r=>pend&&pend.cb(r),error_callback:e=>pend&&pend.err(e)});
   try{await getToken('');}catch(e){msg('연결 실패: '+e.message,true);return;}
   await loadAll();
 };
@@ -567,7 +564,6 @@ $('q').oninput=()=>{query=$('q').value;applyView();};
 
 /* ---------- 초기화 ---------- */
 buildHead();
-try{$('cid').value=localStorage.getItem('cid')||'';}catch(e){}
 updateStatus();
 </script>
 </body>
