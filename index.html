@@ -71,8 +71,6 @@ const CLIENT_ID='436417576963-55e0rqcaoh0giiqcjvo5s06bqum6700v.apps.googleuserco
 const SCOPE='https://www.googleapis.com/auth/contacts';
 const API='https://people.googleapis.com/v1/';
 const RH=28;
-const REL=[['spouse','배우자'],['child','자녀'],['mother','어머니'],['father','아버지'],['parent','부모'],['brother','남자 형제'],['sister','여자 형제'],['friend','친구'],['relative','친척'],['manager','관리자'],['assistant','보조'],['referredBy','참조'],['partner','파트너'],['domesticPartner','동거인']];
-const URLT=[['profile','프로필'],['blog','블로그'],['homePage','홈페이지'],['work','직장']];
 const COLS=[
   {l:'그룹',w:220,f:'memberships'},
   {l:'접두사',w:70,f:'names',k:'honorificPrefix'},
@@ -80,10 +78,6 @@ const COLS=[
   {l:'중간 이름',w:90,f:'names',k:'middleName'},
   {l:'이름',w:100,f:'names',k:'givenName'},
   {l:'접미사',w:70,f:'names',k:'honorificSuffix'},
-  {l:'성 (소리나는 대로)',w:140,f:'names',k:'phoneticFamilyName'},
-  {l:'중간 이름 (소리나는 대로)',w:170,f:'names',k:'phoneticMiddleName'},
-  {l:'이름 (소리나는 대로)',w:140,f:'names',k:'phoneticGivenName'},
-  {l:'별명',w:90,f:'nicknames',k:'value'},
   {l:'회사',w:150,f:'organizations',k:'name'},
   {l:'부서',w:110,f:'organizations',k:'department'},
   {l:'직책',w:110,f:'organizations',k:'title'},
@@ -99,8 +93,6 @@ const COLS=[
   {l:'생일 (연도)',w:90,f:'birthdays',k:'year'},
   {l:'생일 (월)',w:80,f:'birthdays',k:'month'},
   {l:'생일 (일)',w:80,f:'birthdays',k:'day'},
-  ...REL.map(([t,n])=>({l:'관련된 사람 ('+n+')',w:130,f:'relations',t})),
-  ...URLT.map(([t,n])=>({l:'웹사이트 ('+n+')',w:140,f:'urls',t})),
   {l:'메모',w:240,f:'biographies',k:'value'}
 ];
 const NC=COLS.length;
@@ -122,7 +114,7 @@ function msg(t,err){const m=$('msg');m.textContent=t;m.className=err?'err':'';}
 
 /* ---------- 데이터 변환 ---------- */
 let groupNames={},groupByName={};
-const TV={emailAddresses:'value',phoneNumbers:'value',urls:'value',relations:'person'};
+const TV={emailAddresses:'value',phoneNumbers:'value'};
 const sameType=(x,t)=>typeof x.type==='string'&&x.type.toLowerCase()===t.toLowerCase();
 function cellOf(p,c){
   const a=p[c.f]||[];
